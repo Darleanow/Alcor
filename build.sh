@@ -1,3 +1,3 @@
-nasm -f bin boot.asm -o boot.img
-qemu-system-x86_64 -drive format=raw,file=boot.img
+nasm -f bin boot/mbr.asm -o build/mbr.img
+qemu-system-x86_64 -drive format=raw,file=build/mbr.img
 
