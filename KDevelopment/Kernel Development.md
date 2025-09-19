@@ -33,7 +33,15 @@ L'architecture monolithique est historique, inventée en 1960, une des raisons d
 Il existe de nouvelles variantes, plus sûre, comme l'architecture micronoyau, la ou l'idée est de minimiser le plus possible l'applicatif situé dans le kernel. Cette approche est plus sure, mais aussi plus complexe, ce pourquoi nous nous orientons vers un système plus classique.
 ##### Architecture x86/x86_64
 
+--> TODO
+
 ##### Outils nécessaires (cross-compiler, QEMU, GDB)
+Pour suivre ce cours de la manière la plus adaptée possible, il vous faudra installer plusieurs utilitaires:
+    - Qemu (Virtualisation): `sudo apt install qemu-system-x86_64`
+    - Nasm (NetWide Assembly): `sudo apt install nasm`
+    - GDB (Debuggeur): `sudo apt install gdb`
+
+Concernant le cross-compiler, nous détaillerons cette étape un peu plus tard.
 
 ### Bootloader et démarrage de la machine
 
