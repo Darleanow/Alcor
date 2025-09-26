@@ -4,6 +4,7 @@
 #include <core/timer/timer.h>
 #include <drivers/keyboard/keyboard.h>
 #include <drivers/vga_console/vga_console.h>
+#include <shell/shell.h>
 
 void kernel_main(void) {
   vga_console_init();
@@ -13,6 +14,8 @@ void kernel_main(void) {
   idt_init();
   pic_remap(0x20, 0x28);
   timer_init(); // On IRQ0
+
+  shell_init();
 
   asm volatile("sti");
 
