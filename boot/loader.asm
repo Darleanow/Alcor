@@ -1,82 +1,144 @@
-	;     Loader, switches from real mode to protected mode and loads kernel
-	[bits 16]
-	ORG   0x7E00; This code will be loaded at physical address 0x7E00
+	;     Second stage bootloader
+	[BITS 16]
+	ORG   0x7E00
 
 start_loader:
-	call load_kernel; Load the kernel from disk into memory
+	call detect_memory_e820
+	call load_kernel
+	cli
+	lgdt [gdtr]
+	call enable_a20
+	call enter_protected_mode
+	jmp  0x08:protected_mode_entry
 
-	cli  ; Disable interrupts while switching to protected mode
-	lgdt [gdtr]; Load address/size of our Global Descriptor Table
+	; Detect memory using BIOS E820
 
-	;   Enable the A20 line (allow access beyond 1 MB)
+detect_memory_e820:
+	mov edi, 0x8000; Memory map buffer
+	mov dword [0x7FF0], 0; Entry counter
+	xor ebx, ebx; Continuation value
+	mov bp, 0; Entry count
+
+.loop:
+	mov eax, 0xE820
+	mov ecx, 24
+	mov edx, 0x534D4150; "SMAP"
+	int 0x15
+
+	jc  .fallback; Error - use fallback
+	cmp eax, 0x534D4150
+	jne .fallback
+	cmp ecx, 20
+	jb  .skip_entry
+
+	inc bp
+	add edi, 24
+
+	test ebx, ebx
+	jz   .done
+	cmp  bp, 20; Max 20 entries
+	jae  .done
+	jmp  .loop
+
+.skip_entry:
+	test ebx, ebx
+	jz   .done
+	jmp  .loop
+
+.fallback:
+	;   Create fallback memory map
+	mov edi, 0x8000
+	mov bp, 2
+
+	;   Entry 1: 0-639KB
+	mov dword [edi], 0
+	mov dword [edi+4], 0
+	mov dword [edi+8], 0x9FC00
+	mov dword [edi+12], 0
+	mov dword [edi+16], 1
+	mov dword [edi+20], 0
+
+	;   Entry 2: 1MB-32MB
+	add edi, 24
+	mov dword [edi], 0x100000
+	mov dword [edi+4], 0
+	mov dword [edi+8], 0x1F00000
+	mov dword [edi+12], 0
+	mov dword [edi+16], 1
+	mov dword [edi+20], 0
+
+.done:
+	mov [0x7FF0], bp
+	mov word [0x7FF2], 0; Zero-extend to dword
+	ret
+
+	; Load kernel from disk
+
+load_kernel:
+	mov ax, 0x3000
+	mov es, ax
+	xor bx, bx
+
+	mov ah, 0x02
+	mov al, 0x20; 32 sectors
+	mov ch, 0x00
+	mov cl, 0x03
+	mov dh, 0x00
+	mov dl, 0x80
+	int 0x13
+	ret
+
+	; Enable A20 line
+
+enable_a20:
 	in  al, 0x92
 	or  al, 2
 	out 0x92, al
+	ret
 
-	;   Set the PE (Protection Enable) bit in CR0 to enter protected mode
+	; Enter protected mode
+
+enter_protected_mode:
 	mov eax, cr0
 	or  eax, 1
 	mov cr0, eax
-
-	;   Far jump to 32-bit code segment (selector 0x08) to flush pipeline
-	jmp 0x08:protected_mode_entry
-
-	; Load the kernel sectors from disk into memory
-
-load_kernel:
-	mov ax, 0x3000; ES = 0x3000 → destination segment = 0x3000:0x0000
-	mov es, ax
-	xor bx, bx; BX = 0 → offset inside ES segment
-
-	mov ah, 0x02; BIOS INT 13h function 02h: Read sectors
-	mov al, 0x20; Read 16 sectors
-	mov ch, 0x00; Cylinder 0
-	mov cl, 0x03; Starting at sector 3 (sectors 1–2 already used)
-	mov dh, 0x00; Head 0
-	mov dl, 0x80; First hard disk
-
-	int 0x13; BIOS disk service
 	ret
 
-	; Global Descriptor Table (GDT)
+	; Global Descriptor Table
 
 gdt_start:
-	dq 0x0000000000000000; Null descriptor (mandatory first entry)
-	dq 0x00CF9A000000FFFF; Code segment: base=0, limit=4 GB, present, 32-bit
-	dq 0x00CF92000000FFFF; Data segment: base=0, limit=4 GB, read/write
+	dq 0x0000000000000000; Null
+	dq 0x00CF9A000000FFFF; Kernel code
+	dq 0x00CF92000000FFFF; Kernel data
+	dq 0x00CFFA000000FFFF; User code
+	dq 0x00CFF2000000FFFF; User data
 
 gdt_end:
 
-	; GDTR structure for lgdt: [size-1][base]
-
 gdtr:
-	dw gdt_end - gdt_start - 1; Size of GDT minus 1
-	dd gdt_start; Linear address of GDT
+	dw gdt_end - gdt_start - 1
+	dd gdt_start
 
-	;     32-bit protected mode code
+	;     Protected mode entry
 	[BITS 32]
 
 protected_mode_entry:
-	mov ax, 0x10; Data segment selector (second descriptor in GDT)
+	mov ax, 0x10
 	mov ds, ax
 	mov es, ax
 	mov fs, ax
 	mov gs, ax
 	mov ss, ax
-	mov esp, 0x90000; Set up a stack in high memory
+	mov esp, 0x90000
 
-	call clear_screen; Clear text mode screen
-	jmp  0x08:0x30000; Jump to the kernel loaded at physical 0x30000
-
-	; Simple routine to clear the VGA text screen
+	call clear_screen
+	jmp  0x08:0x30000; Jump to kernel
 
 clear_screen:
-	mov edi, 0xB8000; Start of VGA text buffer
-	mov eax, 0x07200720; Two characters with attribute 0x07 (space + attribute)
-	mov ecx, 1000; 80×25 / 2 dwords = 1000 doublewords
-	rep stosd; Fill screen with spaces
+	mov edi, 0xB8000
+	mov eax, 0x07200720
+	mov ecx, 1000
+	rep stosd
 	ret
 
-	;     Pad the sector to 512 bytes (standard boot sector size)
-	times 512-($-$$) db 0
-
+times 512-($-$$) db 0
