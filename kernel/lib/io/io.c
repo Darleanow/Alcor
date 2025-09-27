@@ -53,6 +53,21 @@ int printf(const char *format, ...) {
         }
         break;
       }
+      case 'p': {
+        void *ptr = va_arg(args, void *);
+        uintptr_t addr = (uintptr_t)ptr;
+
+        vga_console_write("0x");
+        count += 2;
+
+        for (int i = 7; i >= 0; i--) {
+          uint8_t nibble = (addr >> (i * 4)) & 0xF;
+          char hex_char = (nibble < 10) ? ('0' + nibble) : ('a' + nibble - 10);
+          vga_console_putchar(hex_char);
+          count++;
+        }
+        break;
+      }
       case '%':
         vga_console_putchar('%');
         count++;
